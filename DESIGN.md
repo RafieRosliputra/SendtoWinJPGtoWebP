@@ -1,45 +1,68 @@
-# DESIGN — cara pemikiran (rujukan masa depan)
+# DESIGN: cara pemikiran (rujukan masa depan)
 
-## 1. Keperluan asal (Rafi, 2026-11-22)
-1. App Windows 11, **CLI sahaja**
-2. Pilih gambar dan/atau folder → right-click → **Send To**
-3. JPG → WebP **60%**, **kekalkan orientation**
-4. WebP ganti gambar dalam folder; JPG pindah ke `_JPG` (per folder)
-5. Guna **semua core** i9-12900
-6. Tunjuk **%** siap
-7. Push ke GitHub `RafieRosliputra/SendtoWinJPGtoWebP`
-8. Terus install + masuk Send To di PC
+## 1. Keperluan (Rafi, 2026-11-22)
+### Gambar
+1. App Windows 11, **CLI sahaja**, guna melalui **Send To** (fail dan/atau folder)
+2. JPG → WebP **60%**, **kekalkan orientation**
+3. WebP ganti dalam folder; JPG pindah ke `_JPG` (per folder)
+4. Guna **semua core** i9-12900, tunjuk **%**
+5. Push ke GitHub `RafieRosliputra/SendtoWinJPGtoWebP`, terus install di PC
+
+### Video (ditambah kemudian, hari sama)
+6. MP4 untuk **simpanan jangka panjang**, proses **laju**
+7. Boleh terima **kualiti turun ~10%** (asalnya minta "25MB → 5MB"; diputuskan ikut kualiti, bukan saiz)
+8. Encoder: **RTX 3060 NVENC**; codec: **HEVC 10-bit**
+9. MP4 asal ke **`_MP4`**; **menu Send To berasingan**
 
 ## 2. Pilihan teknologi
-| Pilihan | Kenapa ya / tidak |
+| Pilihan | Keputusan |
 |---|---|
-| **Python + Pillow → PyInstaller .exe** ✅ | Pillow guna libwebp (encoder rasmi Google), `ImageOps.exif_transpose` urus orientation, mudah diselenggara |
-| cwebp.exe (Google) | Laju, tapi **tak putar ikut EXIF** → gambar portrait jadi senget |
-| ImageMagick | Ada `-auto-orient`, tapi dependency besar (~100MB), perlu install |
-| Rust/Go | Encoder WebP lossy perlu libwebp C (cgo/libwebp-sys) — build lebih rumit, faedah kecil |
+| **Python + Pillow → PyInstaller .exe** ✅ | libwebp rasmi, `exif_transpose` urus orientation, mudah diubah |
+| cwebp.exe | ✗ tak putar ikut EXIF → portrait jadi senget |
+| ImageMagick | ✗ dependency besar |
+| **ffmpeg (BtbN GPL build)** ✅ video | ada `hevc_nvenc` + `libx265` untuk fallback; di-host semula dalam release `ffmpeg-win64.zip` |
 
-Build `.exe` dibuat di **GitHub Actions (windows-latest)** — tak perlu Python di PC.
+Build di **GitHub Actions windows-latest**, jadi PC tak perlu Python.
 
-## 3. Keputusan reka bentuk
-- **Thread, bukan process**: Pillow lepaskan GIL masa decode JPEG, transpose & encode WebP → `ThreadPoolExecutor` dapat guna semua 24 thread tanpa kos spawn process (lambat di Windows, lebih-lebih lagi dengan PyInstaller onefile).
-- **Orientation**: pixel diputar (`exif_transpose`) dan tag `0x0112` dibuang → semua viewer/web papar betul, tak bergantung pada sokongan EXIF browser.
-- **Metadata**: EXIF lain + ICC dikekalkan; `mtime` JPG disalin ke WebP supaya susunan ikut tarikh dalam Explorer/Lightroom tak rosak.
-- **Selamat data**:
-  - tulis ke `nama.webp.part` → `os.replace` (atomic) → baru pindah JPG
-  - jika gagal, `.part` dibuang dan JPG **tak diusik**
-  - nama bertembung dalam `_JPG` → tambah `_1`, `_2`…
-- **Rekursif**: folder diimbas penuh; folder `_JPG` dilangkau supaya run kedua tak convert balik fail lama.
-- **Send To**: shortcut `.lnk` dalam `shell:sendto` → Explorer hantar semua path terpilih sebagai argumen ke satu proses.
-- **Install sendiri**: double-click exe tanpa argumen = `--install` (salin ke `%LOCALAPPDATA%\JPGtoWebP` + buat shortcut). Tiada admin diperlukan.
-- **Console kekal terbuka** di hujung (`Tekan Enter`) supaya keputusan & senarai gagal boleh dibaca.
-- `Image.MAX_IMAGE_PIXELS = None` — gambar 42MP+ (Sony A7R II) tak dianggap "decompression bomb".
+## 3. Kenapa HEVC 10-bit NVENC CQ 26
+| Codec | Saiz (relatif) | Laju di PC Rafi | Serasi | Keputusan |
+|---|---|---|---|---|
+| H.264 NVENC | 100% | sangat laju | semua | ✗ fail besar untuk arkib |
+| **HEVC NVENC** | ~55–60% | sangat laju | telefon, Mac, VLC, TV | ✅ |
+| AV1 | ~45–50% | **CPU sahaja** (RTX 30 tiada encoder AV1) → lambat | baru | ✗ |
 
-## 4. Had diketahui
-- Had command line Windows ~32k aksara → untuk ribuan fail, Send To **folder**, bukan fail.
-- RAM: ~24 gambar 42MP serentak ≈ 3–4 GB. Guna `-j 12` jika RAM sempit.
-- Hanya JPG; HEIC/PNG/RAW tak disentuh.
+- **Kualiti tetap (CQ)**, bukan saiz tetap. Arkib perlukan kualiti konsisten; saiz ikut kandungan video. Sasaran "1/5" akan merosakkan video yang dah dimampat.
+- **CQ 26 ≈ turun ~10%** (lebih kurang VMAF 90+). Boleh ubah dengan `-q`.
+- **10-bit (main10)**: kurang banding/jalur pada gradient, simpan maklumat footage Sony 10-bit; kosnya hampir sifar dengan NVENC.
+- `preset p5 + tune hq + spatial/temporal AQ + lookahead 32 + b_ref middle`: imbangan kualiti/laju yang baik untuk Ampere.
+- `-tag:v hvc1`: supaya QuickTime/iPhone/Mac boleh main.
+- **Audio**: AAC/MP3/AC3/Opus disalin terus (tiada kehilangan). LPCM (biasa pada XAVC S) → AAC 256k sebab MP4 + LPCM bermasalah dan terlalu besar.
+- Hanya `0:v:0` + audio di-map. Track data Sony (timecode/rtmd) dibuang; metadata global (`creation_time`) dikekalkan.
+- **Rotation**: ffmpeg auto-rotate semasa re-encode, jadi video telefon portrait kekal portrait.
 
-## 5. Idea akan datang
-- Pilihan quality dalam menu Send To (cth: 60 / 80 / 90 shortcut berasingan dengan `-q`)
-- Resize (cth: sisi panjang 2048px) untuk web
-- Log fail ke `_JPG\convert.log`
+## 4. Keputusan reka bentuk
+- **Gambar = thread**: Pillow lepaskan GIL masa decode/transpose/encode, jadi 24 thread tanpa kos spawn process.
+- **Video = 2 serentak**: NVENC sebenarnya cip berasingan; 2 job memastikan GPU sentiasa sibuk sementara CPU decode. Lebih dari tu tak tambah laju.
+- **Fallback berlapis video**: NVENC + decode CUDA → NVENC + decode CPU (cth: H.264 4:2:2 10-bit Sony yang NVDEC tak sokong) → libx265 CPU.
+- **Progress video** ikut `-progress pipe:1` (out_time_us), digabung ikut jumlah durasi semua video, jadi % adalah tepat walaupun saiz video tak sama.
+- **Selamat data** (kedua-dua mod):
+  - tulis ke fail `.part` dulu → pindah asal → `os.replace` (atomic)
+  - gagal = fail asal tak diusik, `.part` dibuang
+  - nama bertembung dalam `_JPG/_MP4` → tambah `_1`, `_2`…
+  - video: kalau HEVC ≥ saiz asal → buang hasil, kekalkan asal (DILANGKAU)
+- `mtime` asal disalin ke fail baru, supaya susunan ikut tarikh dalam Explorer/Lightroom kekal.
+- **Rekursif**; folder `_JPG` dan `_MP4` dilangkau supaya run kedua tak proses semula fail lama.
+- **Send To** = 2 shortcut `.lnk` ke exe yang sama (`--video` untuk menu MP4). Tiada admin diperlukan.
+- `install.ps1` set `$ProgressPreference='SilentlyContinue'` sebab progress bar `Invoke-WebRequest` (PowerShell 5.1) boleh jadikan muat turun 10–50x lebih lambat. Pernah nampak macam "tiada pergerakan".
+
+## 5. Had diketahui
+- Had command line Windows ~32k aksara → untuk ribuan fail, Send To **folder**.
+- RAM gambar: ~24 × 42MP serentak ≈ 3–4 GB (`-j 12` jika sempit).
+- Video: hanya `.mp4`. `.mov`/`.mts` belum. Subtitle/chapter tak disalin.
+- Windows Photos perlukan HEVC Video Extensions.
+
+## 6. Idea akan datang
+- `.mov` / `.mts` (Sony AVCHD)
+- Pilihan CQ dalam menu Send To (cth: "arkib CQ 24" vs "kecil CQ 30")
+- Resize gambar (sisi panjang 2048px) untuk web
+- Log ke `_JPG\convert.log` / `_MP4\convert.log`

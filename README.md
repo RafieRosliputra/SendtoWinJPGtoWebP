@@ -1,41 +1,47 @@
 # SendtoWinJPGtoWebP
 
-CLI Windows 11: right-click gambar/folder → **Send to → JPG ke WebP (60%)**.
-
-## Apa ia buat
-- `.jpg` / `.jpeg` → `.webp` quality **60**, dalam folder yang sama
-- Orientation EXIF diaplikasi (gambar portrait kekal portrait)
-- EXIF (kamera, tarikh), ICC profile & tarikh modified dikekalkan
-- JPG asal dipindah ke `_JPG\` dalam folder gambar itu
-- Folder: rekursif, setiap subfolder dapat `_JPG\` sendiri
-- Guna semua thread CPU (i9-12900 = 24 thread)
-- Progress bar `%`, img/s, ETA dalam console
+CLI Windows 11 untuk right-click → **Send to**:
+- **JPG ke WebP (60%)**: gambar
+- **MP4 ke HEVC (kecilkan)**: video, untuk simpanan jangka panjang
 
 ## Pasang
-**Cara 1 (PowerShell, satu baris):**
+PowerShell **biasa** (bukan Administrator), paste satu baris ni sahaja:
 ```powershell
 irm https://raw.githubusercontent.com/RafieRosliputra/SendtoWinJPGtoWebP/main/install.ps1 | iex
 ```
-**Cara 2:** muat turun `jpg2webp.exe` dari [Releases](../../releases/tag/latest) → double-click (auto pasang Send To).
+- Lokasi pasang: `%LOCALAPPDATA%\JPGtoWebP\` (`jpg2webp.exe`, `ffmpeg.exe`, `ffprobe.exe`)
+- Shortcut di `%APPDATA%\Microsoft\Windows\SendTo\`
+- Buang: `jpg2webp.exe --uninstall`
 
-Lokasi pasang: `%LOCALAPPDATA%\JPGtoWebP\jpg2webp.exe`
-Shortcut: `%APPDATA%\Microsoft\Windows\SendTo\JPG ke WebP (60%).lnk`
+## JPG → WebP
+- `.jpg/.jpeg` → `.webp` **quality 60**, dalam folder yang sama
+- Orientation EXIF diaplikasi; EXIF, ICC dan tarikh modified dikekalkan
+- JPG asal masuk `_JPG\` dalam folder gambar tu (rekursif)
+- Guna semua thread CPU (i9-12900 = 24)
+
+## MP4 → HEVC
+- **HEVC 10-bit, NVENC (RTX 3060)**, kualiti tetap **CQ 26** (kualiti turun lebih kurang 10%)
+- Resolusi, fps dan rotation kekal. Audio AAC disalin terus; LPCM (Sony) ditukar ke AAC 256k
+- Nama fail sama (`.mp4`). MP4 asal masuk `_MP4\`
+- Kalau hasil HEVC **tak lebih kecil**, fail asal dikekalkan (DILANGKAU)
+- 2 video diproses serentak. Progress % dikira ikut jumlah durasi
+- Tiada GPU NVIDIA? Auto fallback ke CPU `libx265` (lebih lambat)
 
 ## CLI
 ```
-jpg2webp.exe <fail/folder> [...] [-q 60] [-j 24] [-m 4] [--no-recursive] [--no-pause]
+jpg2webp.exe <fail/folder> ...                [-q 60] [-j 24] [-m 4]
+jpg2webp.exe --video <fail/folder> ...        [-q 26] [-j 2] [--encoder nvenc|x265]
+             [--no-recursive] [--no-pause]
 jpg2webp.exe --install | --uninstall
 ```
-| Flag | Default | Fungsi |
+| Flag | Gambar | Video |
 |---|---|---|
-| `-q` | 60 | quality WebP |
-| `-j` | semua thread | bilangan thread |
-| `-m` | 4 | 0 = laju … 6 = fail kecil |
-| `--no-recursive` | off | jangan masuk subfolder |
-| `--no-pause` | off | jangan tunggu Enter di hujung |
+| `-q` | quality WebP (60) | CQ (26; lebih kecil = lebih cantik, fail lebih besar) |
+| `-j` | thread (semua) | video serentak (2) |
 
 ## Nota
-- Pilih **folder** bila gambar banyak (ribuan fail) — Windows ada had panjang command line (~32k aksara) bila hantar banyak fail satu-satu.
-- Fail rosak dilangkau & disenarai di hujung; JPG asal tak diusik jika gagal.
+- Untuk ribuan fail, Send To **folder**. Windows ada had panjang command line.
+- Fail rosak dilangkau dan disenaraikan di hujung. Fail asal tak diusik kalau gagal.
+- Windows Photos perlukan "HEVC Video Extensions" untuk main HEVC. VLC dan telefon terus boleh.
 
 Rujuk [DESIGN.md](DESIGN.md) untuk cara pemikiran.
