@@ -1,0 +1,37 @@
+name: build-windows
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt pyinstaller
+      - run: pyinstaller --onefile --console --name jpg2webp jpg2webp.py
+      - name: smoke test
+        shell: pwsh
+        run: |
+          python -c "from PIL import Image; im=Image.new('RGB',(64,32)); e=im.getexif(); e[0x0112]=6; im.save('t.jpg', exif=e.tobytes())"
+          New-Item -ItemType Directory smoke | Out-Null; Move-Item t.jpg smoke/
+          dist/jpg2webp.exe smoke --no-pause
+          if (!(Test-Path smoke/t.webp) -or !(Test-Path smoke/_JPG/t.jpg)) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jpg2webp
+          path: dist/jpg2webp.exe
+      - name: release (latest)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: latest build
+          prerelease: true
+          files: dist/jpg2webp.exe
